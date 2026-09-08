@@ -67,17 +67,21 @@ def check_agents_md(stack_dir):
     if len(text) > WINDSURF_CHARS:
         warn(path, f"{len(text)} chars, over the Windsurf per-file cap of {WINDSURF_CHARS}")
 
-    # chain size: root plus every local doc it links
-    chain = len(text.encode("utf-8"))
+    # always-loaded chain: the root (plus nested AGENTS.md files, none in a template).
+    # agent_docs are read on demand, so they only get a soft total.
+    root_bytes = len(text.encode("utf-8"))
+    if root_bytes > CHAIN_BYTES:
+        err(path, f"root is {root_bytes} bytes, over the {CHAIN_BYTES} always-loaded cap")
+    docs_bytes = root_bytes
     for m in re.finditer(r"\]\(([^)]+)\)|`(agent_docs/[^`]+)`", text):
         rel = m.group(1) or m.group(2)
         if rel.startswith("http") or rel.startswith("#"):
             continue
         target = os.path.join(stack_dir, rel.split("#")[0])
         if os.path.isfile(target):
-            chain += os.path.getsize(target)
-    if chain > CHAIN_BYTES:
-        err(path, f"root plus linked docs = {chain} bytes, over {CHAIN_BYTES}")
+            docs_bytes += os.path.getsize(target)
+    if docs_bytes > 2 * CHAIN_BYTES:
+        warn(path, f"root plus linked docs = {docs_bytes} bytes; keep on-demand docs lean")
 
     headings = [re.sub(r"^#+\s*", "", line).strip() for line in lines if line.startswith("#")]
     for sec in REQUIRED_SECTIONS:
